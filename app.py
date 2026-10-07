@@ -59,28 +59,46 @@ BACKGROUND_DIR = os.path.join(
 # LOGIN / USER AUTHENTICATION
 # ============================================================
 
-AUTH_DB = os.path.join(
-    BASE_DIR,
-    "placepredict_users.db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+# Local development keeps using SQLite. Render uses the persistent
+# PostgreSQL database when DATABASE_URL is configured.
+AUTH_DB = os.path.join(BASE_DIR, "placepredict_users.db")
+
+
+def _auth_connect():
+    if DATABASE_URL:
+        import psycopg2
+        return psycopg2.connect(DATABASE_URL), True
+    return sqlite3.connect(AUTH_DB), False
 
 
 def init_auth_database():
-    """Create the local user table used by PlacePredict login."""
+    """Create the user table in PostgreSQL on Render or SQLite locally."""
 
-    connection = sqlite3.connect(AUTH_DB)
+    connection, postgres = _auth_connect()
+    cursor = connection.cursor()
 
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            full_name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
+    if postgres:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    else:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
     connection.commit()
     connection.close()
@@ -98,11 +116,7 @@ def hash_password(password):
         120000
     )
 
-    return (
-        salt.hex()
-        + ":"
-        + password_hash.hex()
-    )
+    return salt.hex() + ":" + password_hash.hex()
 
 
 def verify_password(password, stored_hash):
@@ -110,7 +124,6 @@ def verify_password(password, stored_hash):
 
     try:
         salt_hex, hash_hex = stored_hash.split(":", 1)
-
         salt = bytes.fromhex(salt_hex)
         expected_hash = bytes.fromhex(hash_hex)
 
@@ -121,13 +134,9 @@ def verify_password(password, stored_hash):
             120000
         )
 
-        return secrets.compare_digest(
-            actual_hash,
-            expected_hash
-        )
+        return secrets.compare_digest(actual_hash, expected_hash)
 
     except Exception:
-
         return False
 
 
@@ -146,33 +155,29 @@ def register_user(full_name, email, password):
     if len(password) < 6:
         return False, "Password must contain at least 6 characters."
 
-    connection = sqlite3.connect(AUTH_DB)
+    connection, postgres = _auth_connect()
+    placeholder = "%s" if postgres else "?"
 
     try:
-
         connection.execute(
-            """
+            f"""
             INSERT INTO users
             (full_name, email, password_hash)
-            VALUES (?, ?, ?)
+            VALUES ({placeholder}, {placeholder}, {placeholder})
             """,
-            (
-                full_name,
-                email,
-                hash_password(password)
-            )
+            (full_name, email, hash_password(password))
         )
-
         connection.commit()
-
         return True, "Account created successfully."
 
-    except sqlite3.IntegrityError:
-
-        return False, "An account with this email already exists."
+    except Exception as error:
+        # Both SQLite and PostgreSQL raise an integrity error for a
+        # duplicate email. Keep the user-facing message simple.
+        if "unique" in str(error).lower() or "duplicate" in str(error).lower():
+            return False, "An account with this email already exists."
+        return False, "Unable to create the account. Please try again."
 
     finally:
-
         connection.close()
 
 
@@ -180,14 +185,14 @@ def authenticate_user(email, password):
     """Return the user when login credentials are valid."""
 
     email = email.strip().lower()
-
-    connection = sqlite3.connect(AUTH_DB)
+    connection, postgres = _auth_connect()
+    placeholder = "%s" if postgres else "?"
 
     row = connection.execute(
-        """
+        f"""
         SELECT id, full_name, email, password_hash
         FROM users
-        WHERE email = ?
+        WHERE email = {placeholder}
         """,
         (email,)
     ).fetchone()
@@ -197,10 +202,7 @@ def authenticate_user(email, password):
     if row is None:
         return None
 
-    if not verify_password(
-        password,
-        row[3]
-    ):
+    if not verify_password(password, row[3]):
         return None
 
     return {
@@ -1517,52 +1519,7 @@ st.markdown(
     .page-kicker { color: #64748b !important; font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; margin-bottom: 4px; }
     .page-heading { color: #111827 !important; font-size: 30px; font-weight: 900; margin-bottom: 8px; }
     .page-description { color: #64748b !important; margin-bottom: 22px; }
-    
-    /* Skill Improvement Videos - Light Theme */
-
-    .section-title {
-        color: #111827 !important;
-        font-size: 22px !important;
-        font-weight: 850 !important;
-        margin-top: 24px !important;
-        margin-bottom: 18px !important;
-    }
-
-    [data-testid="stVideo"] {
-        background: #ffffff !important;
-        border: 1px solid #e5e7eb !important;
-        border-radius: 16px !important;
-        padding: 10px !important;
-        margin-top: 10px !important;
-        margin-bottom: 18px !important;
-        box-shadow: 0 7px 20px rgba(15, 23, 42, 0.06) !important;
-    }
-
-    [data-testid="stVideo"] video {
-        background: #ffffff !important;
-        border-radius: 12px !important;
-    }
-
-    [data-testid="stVideo"] > div {
-        background: #ffffff !important;
-    }
-
-    [data-testid="stLinkButton"] a {
-        background: #ffffff !important;
-        color: #111827 !important;
-        border: 1px solid #d1d5db !important;
-        border-radius: 12px !important;
-        font-weight: 700 !important;
-    }
-
-    [data-testid="stLinkButton"] a:hover {
-        background: #eff6ff !important;
-        color: #1d4ed8 !important;
-        border-color: #93c5fd !important;
-    }
-
-</style>
-    
+    </style>
     """,
     unsafe_allow_html=True
 )
@@ -1841,36 +1798,52 @@ def render_profile():
     else:
         st.info("No assessment has been completed in this session yet.")
 
-    
+    st.markdown("### 🧭 Quick Navigation")
+    q1, q2, q3 = st.columns(3)
+
+    with q1:
+        if st.button(
+            "🏠 Dashboard",
+            use_container_width=True,
+            key="profile_dashboard_btn"
+        ):
+            st.session_state.current_page = "Dashboard"
+            st.rerun()
+
+    with q2:
+        if st.button(
+            "📝 New Assessment",
+            use_container_width=True,
+            key="profile_assessment_btn"
+        ):
+            st.session_state.current_page = "Assessment"
+            st.rerun()
+
+    with q3:
+        if st.button(
+            "🧭 Career Roadmap",
+            use_container_width=True,
+            key="profile_roadmap_btn"
+        ):
+            st.session_state.current_page = "Career Roadmap"
+            st.rerun()
+
+
+render_sidebar()
 current_page = st.session_state.get("current_page", "Dashboard")
-
-# Show sidebar on every page except My Profile
-if current_page != "My Profile":
-    render_sidebar()
-
 if current_page == "Dashboard":
-
     render_dashboard()
-
     st.stop()
-
 if current_page == "Skill Academy":
-
     render_skill_academy()
-
     st.stop()
-
 if current_page == "Career Roadmap":
-
     render_career_roadmap()
-
     st.stop()
-
 if current_page == "My Profile":
-
     render_profile()
-
     st.stop()
+
 
 # ============================================================
 # HEADER
