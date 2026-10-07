@@ -21,6 +21,21 @@ def _connect():
     return sqlite3.connect(db_path), False
 
 
+def _to_native(value):
+    """Convert NumPy scalars (np.float64, np.int64, ...) to plain Python types.
+
+    With NumPy 2.x, psycopg2 would otherwise send the text
+    "np.float64(...)" to PostgreSQL, which fails with:
+    schema "np" does not exist
+    """
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return value.item()
+        except Exception:
+            return value
+    return value
+
+
 def create_table():
     conn, postgres = _connect()
     cursor = conn.cursor()
@@ -81,26 +96,17 @@ def create_table():
         """)
 
     conn.commit()
+    cursor.close()
     conn.close()
 
 
 def save_student(data):
     create_table()
     conn, postgres = _connect()
-    cursor = conn.cursor()
     placeholder = "%s" if postgres else "?"
     placeholders = ", ".join([placeholder] * 20)
 
-    cursor.execute(f"""
-        INSERT INTO students (
-            name, email, education_category, stream, current_year,
-            cgpa, tenth_percentage, twelfth_percentage, backlogs,
-            technical_skills, programming_languages, projects, internships,
-            certifications, aptitude_score, communication_score,
-            preferred_career, preferred_location, placement_probability,
-            readiness_level
-        ) VALUES ({placeholders})
-    """, (
+    values = (
         data["name"], data["email"], data["education_category"],
         data["stream"], data["current_year"], data["cgpa"],
         data["tenth_percentage"], data["twelfth_percentage"],
@@ -110,8 +116,34 @@ def save_student(data):
         data["aptitude_score"], data["communication_score"],
         data["preferred_career"], data["preferred_location"],
         data["placement_probability"], data["readiness_level"]
-    ))
+    )
 
-    conn.commit()
-    conn.close()
-    return True
+    # Make sure no NumPy types reach the database driver.
+    values = tuple(_to_native(value) for value in values)
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            INSERT INTO students (
+                name, email, education_category, stream, current_year,
+                cgpa, tenth_percentage, twelfth_percentage, backlogs,
+                technical_skills, programming_languages, projects, internships,
+                certifications, aptitude_score, communication_score,
+                preferred_career, preferred_location, placement_probability,
+                readiness_level
+            ) VALUES ({placeholders})
+        """, values)
+
+        conn.commit()
+        cursor.close()
+        return True
+
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+
+    finally:
+        conn.close()

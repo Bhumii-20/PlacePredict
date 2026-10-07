@@ -22,6 +22,28 @@ from database import create_table, save_student
 
 
 # ============================================================
+# NUMPY -> POSTGRESQL FIX
+#
+# With NumPy 2.x, psycopg2 sends np.float64 values as the text
+# "np.float64(...)", which PostgreSQL rejects. These adapters apply
+# process-wide, so they also cover inserts made inside database.py.
+# ============================================================
+
+try:
+    import numpy as np
+    from psycopg2.extensions import register_adapter, AsIs
+
+    register_adapter(np.float64, lambda value: AsIs(repr(float(value))))
+    register_adapter(np.float32, lambda value: AsIs(repr(float(value))))
+    register_adapter(np.int64, lambda value: AsIs(int(value)))
+    register_adapter(np.int32, lambda value: AsIs(int(value)))
+    register_adapter(np.bool_, lambda value: AsIs(bool(value)))
+except Exception:
+    # psycopg2 is not installed locally (SQLite mode) - nothing to do.
+    pass
+
+
+# ============================================================
 # PAGE CONFIGURATION
 # ============================================================
 
@@ -1903,7 +1925,12 @@ if predict_button:
         # RESULT
         # ====================================================
 
-        placement_probability = probability * 100
+        # Convert numpy types to native Python types. With NumPy 2.x,
+        # psycopg2 would otherwise send "np.float64(...)" to PostgreSQL.
+        probability = float(probability)
+        prediction = int(prediction)
+
+        placement_probability = float(probability * 100)
 
         if placement_probability >= 75:
             readiness = "Highly Ready"
@@ -1949,6 +1976,20 @@ if predict_button:
             "readiness_level": readiness
         }
 
+        def to_native(value):
+            """Convert NumPy scalars to plain Python types for the database."""
+            if hasattr(value, "item") and callable(value.item):
+                try:
+                    return value.item()
+                except Exception:
+                    return value
+            return value
+
+        student_record = {
+            key: to_native(value)
+            for key, value in student_record.items()
+        }
+
         try:
 
             save_student(student_record)
@@ -1963,6 +2004,15 @@ if predict_button:
             )
 
             st.code(str(save_error))
+
+            # Diagnostic: shows the Python type of each saved value.
+            st.caption("Build: numpy-fix-v4 | value types sent to save_student:")
+            st.code(
+                "\n".join(
+                    f"{key}: {type(value).__name__}"
+                    for key, value in student_record.items()
+                )
+            )
 
         # ====================================================
         # RESULT TITLE
