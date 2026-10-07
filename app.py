@@ -44,15 +44,8 @@ create_table()
 # PATHS
 # ============================================================
 
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
-
-BACKGROUND_DIR = os.path.join(
-    BASE_DIR,
-    "assets",
-    "backgrounds"
-)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKGROUND_DIR = os.path.join(BASE_DIR, "assets", "backgrounds")
 
 
 # ============================================================
@@ -101,6 +94,7 @@ def init_auth_database():
         """)
 
     connection.commit()
+    cursor.close()
     connection.close()
 
 
@@ -141,7 +135,7 @@ def verify_password(password, stored_hash):
 
 
 def register_user(full_name, email, password):
-    """Create a new user account."""
+    """Create a new user account (works with SQLite and PostgreSQL)."""
 
     email = email.strip().lower()
     full_name = full_name.strip()
@@ -159,7 +153,8 @@ def register_user(full_name, email, password):
     placeholder = "%s" if postgres else "?"
 
     try:
-        connection.execute(
+        cursor = connection.cursor()
+        cursor.execute(
             f"""
             INSERT INTO users
             (full_name, email, password_hash)
@@ -168,9 +163,15 @@ def register_user(full_name, email, password):
             (full_name, email, hash_password(password))
         )
         connection.commit()
+        cursor.close()
         return True, "Account created successfully."
 
     except Exception as error:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+
         # Both SQLite and PostgreSQL raise an integrity error for a
         # duplicate email. Keep the user-facing message simple.
         if "unique" in str(error).lower() or "duplicate" in str(error).lower():
@@ -188,16 +189,20 @@ def authenticate_user(email, password):
     connection, postgres = _auth_connect()
     placeholder = "%s" if postgres else "?"
 
-    row = connection.execute(
-        f"""
-        SELECT id, full_name, email, password_hash
-        FROM users
-        WHERE email = {placeholder}
-        """,
-        (email,)
-    ).fetchone()
-
-    connection.close()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            f"""
+            SELECT id, full_name, email, password_hash
+            FROM users
+            WHERE email = {placeholder}
+            """,
+            (email,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        connection.close()
 
     if row is None:
         return None
@@ -215,12 +220,8 @@ def authenticate_user(email, password):
 def show_login_page():
     """Display login/register screen and return True when authenticated."""
 
-    if st.session_state.get(
-        "authenticated",
-        False
-    ):
+    if st.session_state.get("authenticated", False):
         return True
-
 
     st.markdown(
         """
@@ -340,9 +341,7 @@ def show_login_page():
         unsafe_allow_html=True
     )
 
-    left, center, right = st.columns(
-        [1, 1.5, 1]
-    )
+    left, center, right = st.columns([1, 1.5, 1])
 
     with center:
 
@@ -355,9 +354,7 @@ def show_login_page():
 
         if selected_tab == "Login":
 
-            st.markdown(
-                "### Welcome Back"
-            )
+            st.markdown("### Welcome Back")
 
             with st.form("login_form"):
 
@@ -379,27 +376,17 @@ def show_login_page():
 
             if login_clicked:
 
-                user = authenticate_user(
-                    login_email,
-                    login_password
-                )
+                user = authenticate_user(login_email, login_password)
 
                 if user:
-
                     st.session_state.authenticated = True
                     st.session_state.logged_in_user = user
                     st.rerun()
-
                 else:
-
-                    st.error(
-                        "Invalid email or password."
-                    )
+                    st.error("Invalid email or password.")
 
         else:
-            st.markdown(
-                "### Create Your Student Account"
-            )
+            st.markdown("### Create Your Student Account")
 
             with st.form("register_form"):
 
@@ -433,13 +420,8 @@ def show_login_page():
             if register_clicked:
 
                 if register_password != register_confirm:
-
-                    st.error(
-                        "Passwords do not match."
-                    )
-
+                    st.error("Passwords do not match.")
                 else:
-
                     created, message = register_user(
                         register_name,
                         register_email,
@@ -447,15 +429,12 @@ def show_login_page():
                     )
 
                     if created:
-
                         st.success(message)
                         st.info(
                             "Your account is ready. "
                             "Open the Login tab to continue."
                         )
-
                     else:
-
                         st.error(message)
 
     st.stop()
@@ -471,66 +450,26 @@ show_login_page()
 # ============================================================
 
 CAREER_BACKGROUNDS = {
-
-    "Software Development":
-        "software.jpg",
-
-    "Data Analytics":
-        "data_analytics.jpg",
-
-    "Data Science":
-        "data_science.jpg",
-
-    "Machine Learning":
-        "machine_learning.jpg",
-
-    "Artificial Intelligence":
-        "ai.jpg",
-
-    "Web Development":
-        "web_development.jpg",
-
-    "Cyber Security":
-        "cybersecurity.jpg",
-
-    "Cloud Computing":
-        "cloud.jpg",
-
-    "Business Analytics":
-        "business_analytics.jpg",
-
-    "Finance":
-        "finance.jpg",
-
-    "Marketing":
-        "marketing.jpg",
-
-    "Human Resources":
-        "hr.jpg",
-
-    "Fashion & Design":
-        "fashion.jpg",
-
-    "Architecture":
-        "architecture.jpg",
-
-    "Graphic Design":
-        "graphic_design.jpg",
-
-    "UI/UX Design":
-        "uiux.jpg",
-
-    "Media & Journalism":
-        "media.jpg",
-
-    "Healthcare":
-        "healthcare.jpg",
-
-    "Education":
-        "education.jpg",
-
-    "Hospitality & Tourism":
-        "hospitality.jpg"
+    "Software Development": "software.jpg",
+    "Data Analytics": "data_analytics.jpg",
+    "Data Science": "data_science.jpg",
+    "Machine Learning": "machine_learning.jpg",
+    "Artificial Intelligence": "ai.jpg",
+    "Web Development": "web_development.jpg",
+    "Cyber Security": "cybersecurity.jpg",
+    "Cloud Computing": "cloud.jpg",
+    "Business Analytics": "business_analytics.jpg",
+    "Finance": "finance.jpg",
+    "Marketing": "marketing.jpg",
+    "Human Resources": "hr.jpg",
+    "Fashion & Design": "fashion.jpg",
+    "Architecture": "architecture.jpg",
+    "Graphic Design": "graphic_design.jpg",
+    "UI/UX Design": "uiux.jpg",
+    "Media & Journalism": "media.jpg",
+    "Healthcare": "healthcare.jpg",
+    "Education": "education.jpg",
+    "Hospitality & Tourism": "hospitality.jpg"
 }
 
 
@@ -539,58 +478,30 @@ CAREER_BACKGROUNDS = {
 # ============================================================
 
 DEFAULT_VALUES = {
-
     "student_name": "",
-
     "email": "",
-
-    "education_category":
-        "Engineering",
-
-    "score_type":
-        "CGPA",
-
+    "education_category": "Engineering",
+    "score_type": "CGPA",
     "cgpa_input": "",
-
     "percentage_input": "",
-
     "tenth_input": "",
-
     "twelfth_input": "",
-
-    "stream":
-        "Computer Science",
-
-    "current_year":
-        "Third Year",
-
+    "stream": "Computer Science",
+    "current_year": "Third Year",
     "backlogs_input": "",
-
     "technical_skills": "",
-
     "programming_languages": "",
-
     "projects_input": "",
-
     "internships_input": "",
-
     "certifications_input": "",
-
     "aptitude_input": "",
-
     "communication_input": "",
-
-    "preferred_career":
-        "Software Development",
-
+    "preferred_career": "Software Development",
     "preferred_location": ""
 }
 
-
 for key, value in DEFAULT_VALUES.items():
-
     if key not in st.session_state:
-
         st.session_state[key] = value
 
 
@@ -617,21 +528,14 @@ if "assessment_count" not in st.session_state:
 
 def get_background_image(career):
 
-    filename = CAREER_BACKGROUNDS.get(
-        career
-    )
+    filename = CAREER_BACKGROUNDS.get(career)
 
     if not filename:
-
         return None
 
-    image_path = os.path.join(
-        BACKGROUND_DIR,
-        filename
-    )
+    image_path = os.path.join(BACKGROUND_DIR, filename)
 
     if not os.path.isfile(image_path):
-
         return None
 
     return image_path
@@ -643,52 +547,28 @@ def get_background_image(career):
 
 def set_career_background(career):
 
-    image_path = get_background_image(
-        career
-    )
+    image_path = get_background_image(career)
 
     if image_path is None:
-
         return
 
     try:
 
-        with open(
-            image_path,
-            "rb"
-        ) as image_file:
-
+        with open(image_path, "rb") as image_file:
             image_data = image_file.read()
 
+        encoded_image = base64.b64encode(image_data).decode()
 
-        encoded_image = (
-            base64.b64encode(
-                image_data
-            ).decode()
-        )
-
-
-        extension = os.path.splitext(
-            image_path
-        )[1].lower()
-
+        extension = os.path.splitext(image_path)[1].lower()
 
         if extension == ".png":
-
             mime_type = "image/png"
-
         elif extension == ".webp":
-
             mime_type = "image/webp"
-
         elif extension == ".gif":
-
             mime_type = "image/gif"
-
         else:
-
             mime_type = "image/jpeg"
-
 
         st.markdown(
             f"""
@@ -698,68 +578,40 @@ def set_career_background(career):
             body,
             [data-testid="stAppViewContainer"],
             [data-testid="stApp"] {{
-
-                background:
-                    transparent !important;
+                background: transparent !important;
             }}
 
-
             [data-testid="stAppViewContainer"]::before {{
-
                 content: "";
-
                 position: fixed;
-
                 top: 0;
                 left: 0;
-
                 width: 100vw;
                 height: 100vh;
-
                 background-image:
-
                     linear-gradient(
                         rgba(255,255,255,0.94),
                         rgba(255,255,255,0.94)
                     ),
-
-                    url(
-                        "data:{mime_type};base64,{encoded_image}"
-                    );
-
+                    url("data:{mime_type};base64,{encoded_image}");
                 background-size: cover;
-
                 background-position: center;
-
                 background-repeat: no-repeat;
-
                 background-attachment: fixed;
-
                 z-index: 0;
-
                 pointer-events: none;
             }}
 
-
             [data-testid="stAppViewContainer"] > .main {{
-
                 position: relative;
-
                 z-index: 1;
-
-                background:
-                    transparent !important;
+                background: transparent !important;
             }}
 
-
             [data-testid="stMain"] {{
-
                 position: relative;
-
                 z-index: 1;
-
-                background:
-                    transparent !important;
+                background: transparent !important;
             }}
 
             </style>
@@ -768,7 +620,6 @@ def set_career_background(career):
         )
 
     except Exception:
-
         pass
 
 
@@ -785,46 +636,26 @@ st.markdown(
     ======================================================== */
 
     .stApp {
-
-        background:
-            #f8fafc !important;
-
-        color:
-            #111827 !important;
+        background: #f8fafc !important;
+        color: #111827 !important;
     }
-
 
     [data-testid="stAppViewContainer"] {
-
-        background:
-            transparent !important;
+        background: transparent !important;
     }
-
 
     [data-testid="stMain"] {
-
-        background:
-            #f8fafc !important;
+        background: #f8fafc !important;
     }
-
 
     [data-testid="stHeader"] {
-
-        background:
-            transparent !important;
+        background: transparent !important;
     }
 
-
     .main .block-container {
-
-        max-width:
-            1200px;
-
-        padding-top:
-            35px;
-
-        padding-bottom:
-            70px;
+        max-width: 1200px;
+        padding-top: 35px;
+        padding-bottom: 70px;
     }
 
 
@@ -833,48 +664,21 @@ st.markdown(
     ======================================================== */
 
     .main-title {
-
-        text-align:
-            center;
-
-        font-size:
-            44px;
-
-        font-weight:
-            900;
-
-        color:
-            #111827 !important;
-
-        text-shadow:
-            0 2px 5px
-            rgba(255,255,255,0.95);
-
-        margin-bottom:
-            8px;
+        text-align: center;
+        font-size: 44px;
+        font-weight: 900;
+        color: #111827 !important;
+        text-shadow: 0 2px 5px rgba(255,255,255,0.95);
+        margin-bottom: 8px;
     }
 
-
     .subtitle {
-
-        text-align:
-            center;
-
-        font-size:
-            17px;
-
-        font-weight:
-            700;
-
-        color:
-            #374151 !important;
-
-        text-shadow:
-            0 2px 5px
-            rgba(255,255,255,0.95);
-
-        margin-bottom:
-            35px;
+        text-align: center;
+        font-size: 17px;
+        font-weight: 700;
+        color: #374151 !important;
+        text-shadow: 0 2px 5px rgba(255,255,255,0.95);
+        margin-bottom: 35px;
     }
 
 
@@ -883,25 +687,12 @@ st.markdown(
     ======================================================== */
 
     .section-title {
-
-        font-size:
-            26px;
-
-        font-weight:
-            850;
-
-        color:
-            #111827 !important;
-
-        text-shadow:
-            0 2px 5px
-            rgba(255,255,255,0.95);
-
-        margin-top:
-            30px;
-
-        margin-bottom:
-            20px;
+        font-size: 26px;
+        font-weight: 850;
+        color: #111827 !important;
+        text-shadow: 0 2px 5px rgba(255,255,255,0.95);
+        margin-top: 30px;
+        margin-bottom: 20px;
     }
 
 
@@ -911,229 +702,112 @@ st.markdown(
 
     [data-testid="stWidgetLabel"] p,
     [data-testid="stWidgetLabel"] label {
-
-        color:
-            #111827 !important;
-
-        font-weight:
-            800 !important;
+        color: #111827 !important;
+        font-weight: 800 !important;
     }
 
-
     [data-testid="stMarkdownContainer"] p {
-
-        color:
-            #111827 !important;
-
-        font-weight:
-            600;
+        color: #111827 !important;
+        font-weight: 600;
     }
 
 
     /* ========================================================
        TEXT INPUT
-       DARK BOX
     ======================================================== */
 
     div[data-baseweb="input"],
     div[data-baseweb="input"] > div {
-
-        background:
-            #ffffff !important;
-
-        background-color:
-            #ffffff !important;
-
-        border:
-            1.5px solid #4b5563 !important;
-
-        border-radius:
-            10px !important;
-
-        opacity:
-            1 !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #4b5563 !important;
+        border-radius: 10px !important;
+        opacity: 1 !important;
     }
-
 
     div[data-baseweb="input"] input {
-
-        background:
-            #ffffff !important;
-
-        background-color:
-            #ffffff !important;
-
-        color:
-            #111827 !important;
-
-        -webkit-text-fill-color:
-            #111827 !important;
-
-        caret-color:
-            #111827 !important;
-
-        font-size:
-            16px !important;
-
-        font-weight:
-            600 !important;
-
-        opacity:
-            1 !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        opacity: 1 !important;
     }
 
-
-    div[data-baseweb="input"]
-    input::placeholder {
-
-        color:
-            #94a3b8 !important;
-
-        -webkit-text-fill-color:
-            #94a3b8 !important;
-
-        opacity:
-            1 !important;
+    div[data-baseweb="input"] input::placeholder {
+        color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
+        opacity: 1 !important;
     }
 
 
     /* ========================================================
        TEXT AREA
-       DARK BOX + WHITE TEXT
     ======================================================== */
 
     div[data-baseweb="textarea"],
     div[data-baseweb="textarea"] > div,
     div[data-baseweb="textarea"] > div > div,
     div[data-baseweb="textarea"] > div > div > div {
-
-        background:
-            #ffffff !important;
-
-        background-color:
-            #ffffff !important;
-
-        border:
-            1.5px solid #4b5563 !important;
-
-        border-radius:
-            10px !important;
-
-        opacity:
-            1 !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #4b5563 !important;
+        border-radius: 10px !important;
+        opacity: 1 !important;
     }
-
 
     div[data-baseweb="textarea"] textarea,
     textarea {
-
-        background:
-            #ffffff !important;
-
-        background-color:
-            #ffffff !important;
-
-        color:
-            #111827 !important;
-
-        -webkit-text-fill-color:
-            #111827 !important;
-
-        caret-color:
-            #111827 !important;
-
-        font-size:
-            16px !important;
-
-        font-weight:
-            600 !important;
-
-        line-height:
-            1.5 !important;
-
-        border:
-            none !important;
-
-        outline:
-            none !important;
-
-        box-shadow:
-            none !important;
-
-        opacity:
-            1 !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        line-height: 1.5 !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        opacity: 1 !important;
     }
 
-
-    div[data-baseweb="textarea"]
-    textarea::placeholder,
+    div[data-baseweb="textarea"] textarea::placeholder,
     textarea::placeholder {
-
-        color:
-            #94a3b8 !important;
-
-        -webkit-text-fill-color:
-            #94a3b8 !important;
-
-        opacity:
-            1 !important;
+        color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
+        opacity: 1 !important;
     }
 
 
     /* ========================================================
        SELECTBOX
-       DARK BOX + WHITE TEXT
     ======================================================== */
 
     div[data-baseweb="select"] {
-
-        background:
-            #ffffff !important;
-
-        color:
-            #111827 !important;
+        background: #ffffff !important;
+        color: #111827 !important;
     }
-
 
     div[data-baseweb="select"] > div {
-
-        background:
-            #ffffff !important;
-
-        background-color:
-            #ffffff !important;
-
-        border:
-            1.5px solid #4b5563 !important;
-
-        border-radius:
-            10px !important;
-
-        color:
-            #111827 !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #4b5563 !important;
+        border-radius: 10px !important;
+        color: #111827 !important;
     }
-
 
     div[data-baseweb="select"] * {
-
-        color:
-            #111827 !important;
-
-        -webkit-text-fill-color:
-            #111827 !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
     }
 
-
     div[data-baseweb="select"] input {
-
-        color:
-            #111827 !important;
-
-        -webkit-text-fill-color:
-            #111827 !important;
-
-        background:
-            #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        background: #ffffff !important;
     }
 
 
@@ -1142,35 +816,19 @@ st.markdown(
     ======================================================== */
 
     div[role="listbox"] {
-
-        background:
-            #ffffff !important;
+        background: #ffffff !important;
     }
-
 
     div[role="option"] {
-
-        background:
-            #ffffff !important;
-
-        color:
-            #111827 !important;
-
-        -webkit-text-fill-color:
-            #111827 !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
     }
 
-
     div[role="option"]:hover {
-
-        background:
-            #eff6ff !important;
-
-        color:
-            #1d4ed8 !important;
-
-        -webkit-text-fill-color:
-            #1d4ed8 !important;
+        background: #eff6ff !important;
+        color: #1d4ed8 !important;
+        -webkit-text-fill-color: #1d4ed8 !important;
     }
 
     div[role="listbox"] * {
@@ -1190,12 +848,8 @@ st.markdown(
 
     [data-testid="stRadio"] label,
     [data-testid="stRadio"] p {
-
-        color:
-            #111827 !important;
-
-        font-weight:
-            700 !important;
+        color: #111827 !important;
+        font-weight: 700 !important;
     }
 
 
@@ -1204,12 +858,8 @@ st.markdown(
     ======================================================== */
 
     [data-testid="stForm"] {
-
-        background:
-            rgba(255,255,255,0.08) !important;
-
-        border:
-            none !important;
+        background: rgba(255,255,255,0.08) !important;
+        border: none !important;
     }
 
 
@@ -1218,51 +868,24 @@ st.markdown(
     ======================================================== */
 
     [data-testid="stFormSubmitButton"] button {
-
-        width:
-            100% !important;
-
-        min-height:
-            58px !important;
-
-        background:
-            #6d28d9 !important;
-
-        color:
-            #ffffff !important;
-
-        border:
-            none !important;
-
-        border-radius:
-            12px !important;
-
-        font-size:
-            18px !important;
-
-        font-weight:
-            850 !important;
-
-        box-shadow:
-            0 7px 20px
-            rgba(109,40,217,0.30) !important;
+        width: 100% !important;
+        min-height: 58px !important;
+        background: #6d28d9 !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-size: 18px !important;
+        font-weight: 850 !important;
+        box-shadow: 0 7px 20px rgba(109,40,217,0.30) !important;
     }
-
 
     [data-testid="stFormSubmitButton"] button:hover {
-
-        background:
-            #5b21b6 !important;
-
-        color:
-            #ffffff !important;
+        background: #5b21b6 !important;
+        color: #ffffff !important;
     }
 
-
     [data-testid="stFormSubmitButton"] button p {
-
-        color:
-            #ffffff !important;
+        color: #ffffff !important;
     }
 
 
@@ -1271,42 +894,21 @@ st.markdown(
     ======================================================== */
 
     [data-testid="stMetric"] {
-
-        background:
-            rgba(255,255,255,0.97) !important;
-
-        border:
-            1px solid #d1d5db !important;
-
-        border-radius:
-            15px !important;
-
-        padding:
-            18px !important;
-
-        box-shadow:
-            0 5px 18px
-            rgba(0,0,0,0.10) !important;
+        background: rgba(255,255,255,0.97) !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 15px !important;
+        padding: 18px !important;
+        box-shadow: 0 5px 18px rgba(0,0,0,0.10) !important;
     }
-
 
     [data-testid="stMetricLabel"] {
-
-        color:
-            #374151 !important;
-
-        font-weight:
-            700 !important;
+        color: #374151 !important;
+        font-weight: 700 !important;
     }
 
-
     [data-testid="stMetricValue"] {
-
-        color:
-            #111827 !important;
-
-        font-weight:
-            900 !important;
+        color: #111827 !important;
+        font-weight: 900 !important;
     }
 
 
@@ -1315,30 +917,14 @@ st.markdown(
     ======================================================== */
 
     .skill-card {
-
-        background:
-            rgba(255,255,255,0.96);
-
-        border:
-            1px solid #d1d5db;
-
-        border-radius:
-            12px;
-
-        padding:
-            14px 18px;
-
-        margin:
-            8px 0;
-
-        color:
-            #111827 !important;
-
-        box-shadow:
-            0 4px 14px
-            rgba(0,0,0,0.08);
+        background: rgba(255,255,255,0.96);
+        border: 1px solid #d1d5db;
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin: 8px 0;
+        color: #111827 !important;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.08);
     }
-
 
     .skill-card strong {
         color: #111827 !important;
@@ -1387,19 +973,12 @@ st.markdown(
     ======================================================== */
 
     [data-testid="stAlert"] {
-
-        border-radius:
-            12px !important;
+        border-radius: 12px !important;
     }
-
 
     [data-testid="stAlert"] p {
-
-        color:
-            #111827 !important;
+        color: #111827 !important;
     }
-
-
 
 
     /* ========================================================
@@ -1447,6 +1026,48 @@ st.markdown(
         border-color: #bfdbfe !important;
         color: #1d4ed8 !important;
     }
+
+
+    /* ========================================================
+       LINK BUTTONS (st.link_button)
+       Fixes dark bar with invisible text
+    ======================================================== */
+
+    a[data-testid^="stBaseLinkButton"],
+    [data-testid="stLinkButton"] a {
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.06) !important;
+        text-decoration: none !important;
+    }
+
+    a[data-testid^="stBaseLinkButton"] *,
+    [data-testid="stLinkButton"] a * {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+    }
+
+    a[data-testid^="stBaseLinkButton"]:hover,
+    [data-testid="stLinkButton"] a:hover {
+        background: #eff6ff !important;
+        background-color: #eff6ff !important;
+        border-color: #93c5fd !important;
+    }
+
+    a[data-testid^="stBaseLinkButton"]:hover *,
+    [data-testid="stLinkButton"] a:hover * {
+        color: #1d4ed8 !important;
+        -webkit-text-fill-color: #1d4ed8 !important;
+    }
+
+
+    /* ========================================================
+       SIDEBAR + DASHBOARD COMPONENTS
+    ======================================================== */
 
     .sidebar-brand {
         padding: 18px 8px 24px 8px;
@@ -1646,25 +1267,48 @@ def render_skill_academy():
     st.markdown("<div class='page-kicker'>Personalized Learning</div>", unsafe_allow_html=True)
     st.markdown("<div class='page-heading'>🎥 Skill Academy</div>", unsafe_allow_html=True)
     st.markdown("<div class='page-description'>Learning resources are generated from the weak skills identified by your latest assessment.</div>", unsafe_allow_html=True)
+
     weak_skills = get_weak_skills()
+
     if not weak_skills:
         st.info("Complete a placement assessment first. Your identified skill gaps will appear here.")
         if st.button("📝 Go to Assessment", use_container_width=True):
             st.session_state.current_page = "Assessment"
             st.rerun()
         return
+
     coverage = int((st.session_state.get("last_skill_result") or {}).get("skill_coverage", 0))
+
     st.write(f"**Current career skill coverage: {coverage}%**")
     st.progress(coverage)
+
     for skill in weak_skills:
         resource = get_video_resource(skill)
-        st.markdown(f"<div class='learning-card'><div class='learning-title'>📚 Improve: {skill}</div><div class='learning-meta'>This skill was identified as a development area in your latest assessment.</div></div>", unsafe_allow_html=True)
+
+        st.markdown(
+            f"<div class='learning-card'><div class='learning-title'>📚 Improve: {skill}</div><div class='learning-meta'>This skill was identified as a development area in your latest assessment.</div></div>",
+            unsafe_allow_html=True
+        )
+
         if resource:
             st.video(resource["url"])
-            st.caption(resource["title"])
+
+            st.markdown(
+                f"<div style='color:#111827; font-size:16px; font-weight:600; margin-top:8px;'>{resource['title']}</div>",
+                unsafe_allow_html=True
+            )
+
         else:
-            search_url = "https://www.youtube.com/results?search_query=" + quote_plus(f"{skill} tutorial for beginners")
-            st.link_button(f"🔎 Find {skill} learning videos", search_url, use_container_width=True)
+            search_url = "https://www.youtube.com/results?search_query=" + quote_plus(
+                f"{skill} tutorial for beginners"
+            )
+
+            st.link_button(
+                f"🔎 Search YouTube: {skill}",
+                search_url,
+                use_container_width=True
+            )
+
         st.divider()
 
 
@@ -1694,19 +1338,28 @@ def render_career_roadmap():
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("### 💼 Suitable Roles")
-                for role in roles: st.write(f"• {role}")
+                for role in roles:
+                    st.write(f"• {role}")
             with c2:
                 st.markdown("### 🛠️ Core Skills")
-                for skill in skills: st.write(f"• {skill}")
+                for skill in skills:
+                    st.write(f"• {skill}")
             with c3:
                 st.markdown("### 📜 Certifications")
-                for cert in certifications: st.write(f"• {cert}")
+                for cert in certifications:
+                    st.write(f"• {cert}")
         else:
             st.write(guidance)
     except Exception:
         st.info("Career roadmap details could not be loaded from the current career guidance module.")
     st.markdown("### 🗺️ Suggested Preparation Sequence")
-    roadmap = [("01", "Build fundamentals", "Learn the core concepts required for your selected career."), ("02", "Practice skills", "Solve exercises and practical tasks to strengthen fundamentals."), ("03", "Build projects", "Create portfolio projects that demonstrate your ability to apply skills."), ("04", "Earn credentials", "Complete relevant certifications where they add value."), ("05", "Prepare for recruitment", "Practice aptitude, communication, technical interviews and resume presentation.")]
+    roadmap = [
+        ("01", "Build fundamentals", "Learn the core concepts required for your selected career."),
+        ("02", "Practice skills", "Solve exercises and practical tasks to strengthen fundamentals."),
+        ("03", "Build projects", "Create portfolio projects that demonstrate your ability to apply skills."),
+        ("04", "Earn credentials", "Complete relevant certifications where they add value."),
+        ("05", "Prepare for recruitment", "Practice aptitude, communication, technical interviews and resume presentation.")
+    ]
     for number, title, description in roadmap:
         st.markdown(f"**{number} · {title}**  \n{description}")
         st.divider()
@@ -1723,9 +1376,7 @@ def render_profile():
             st.session_state.get("preferred_career", "Not selected")
         )
     else:
-        current_career = st.session_state.get(
-            "preferred_career", "Not selected"
-        )
+        current_career = st.session_state.get("preferred_career", "Not selected")
 
     # Back to Dashboard button
     if st.button("← Back to Dashboard", key="profile_back_dashboard"):
@@ -1746,14 +1397,8 @@ def render_profile():
             st.session_state.current_page = "Career Roadmap"
             st.rerun()
 
-    st.markdown(
-        "<div class='page-kicker'>Account</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "<div class='page-heading'>👤 My Profile</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<div class='page-kicker'>Account</div>", unsafe_allow_html=True)
+    st.markdown("<div class='page-heading'>👤 My Profile</div>", unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
 
@@ -1797,36 +1442,6 @@ def render_profile():
 
     else:
         st.info("No assessment has been completed in this session yet.")
-
-    st.markdown("### 🧭 Quick Navigation")
-    q1, q2, q3 = st.columns(3)
-
-    with q1:
-        if st.button(
-            "🏠 Dashboard",
-            use_container_width=True,
-            key="profile_dashboard_btn"
-        ):
-            st.session_state.current_page = "Dashboard"
-            st.rerun()
-
-    with q2:
-        if st.button(
-            "📝 New Assessment",
-            use_container_width=True,
-            key="profile_assessment_btn"
-        ):
-            st.session_state.current_page = "Assessment"
-            st.rerun()
-
-    with q3:
-        if st.button(
-            "🧭 Career Roadmap",
-            use_container_width=True,
-            key="profile_roadmap_btn"
-        ):
-            st.session_state.current_page = "Career Roadmap"
-            st.rerun()
 
 
 render_sidebar()
@@ -1875,20 +1490,12 @@ st.markdown(
 
 
 # ============================================================
-# CURRENT ACCOUNT
-# ============================================================
-
-# ============================================================
 # LOGGED-IN USER
 # ============================================================
 
-logged_in_user = st.session_state.get(
-    "logged_in_user",
-    {}
-)
+logged_in_user = st.session_state.get("logged_in_user", {})
 
 if logged_in_user:
-
     st.caption(
         f"Logged in as: {logged_in_user.get('full_name', '')} "
         f"({logged_in_user.get('email', '')})"
@@ -1898,13 +1505,8 @@ if logged_in_user:
 # ============================================================
 # CAREER PREFERENCE FRAGMENT
 #
-# IMPORTANT:
-# This section is separate from the student form.
-#
-# Changing career only reruns this fragment.
-# It does NOT rerun the complete app.
-#
-# Therefore unfinished student form values are not lost.
+# Separate from the student form. Changing career only reruns
+# this fragment, so unfinished form values are not lost.
 # ============================================================
 
 @st.fragment
@@ -1919,37 +1521,24 @@ def career_preferences():
         unsafe_allow_html=True
     )
 
-
     col1, col2 = st.columns(2)
 
-
     with col1:
-
         st.selectbox(
             "Preferred Career Field",
-            list(
-                CAREER_BACKGROUNDS.keys()
-            ),
+            list(CAREER_BACKGROUNDS.keys()),
             key="preferred_career"
         )
 
-
     with col2:
-
         st.text_input(
             "Preferred Job Location",
             placeholder="Example: Pune",
             key="preferred_location"
         )
 
-
-    # --------------------------------------------------------
     # Update background immediately
-    # --------------------------------------------------------
-
-    set_career_background(
-        st.session_state.preferred_career
-    )
+    set_career_background(st.session_state.preferred_career)
 
 
 career_preferences()
@@ -1957,10 +1546,6 @@ career_preferences()
 
 # ============================================================
 # STUDENT INFORMATION FORM
-#
-# EVERYTHING BELOW IS INSIDE ONE FORM.
-#
-# This prevents reruns while entering student information.
 # ============================================================
 
 with st.form(
@@ -1969,10 +1554,7 @@ with st.form(
     enter_to_submit=False
 ):
 
-
-    # ========================================================
-    # STUDENT PROFILE
-    # ========================================================
+    # ---------------- STUDENT PROFILE ----------------
 
     st.markdown(
         """
@@ -1983,9 +1565,7 @@ with st.form(
         unsafe_allow_html=True
     )
 
-
     col1, col2 = st.columns(2)
-
 
     with col1:
 
@@ -1995,13 +1575,11 @@ with st.form(
             key="student_name"
         )
 
-
         st.text_input(
             "Email",
             placeholder="Enter your email",
             key="email"
         )
-
 
         st.selectbox(
             "Education Category",
@@ -2019,36 +1597,27 @@ with st.form(
             key="education_category"
         )
 
-
     with col2:
 
         st.radio(
             "Academic Score Type",
-            [
-                "CGPA",
-                "Percentage"
-            ],
+            ["CGPA", "Percentage"],
             horizontal=True,
             key="score_type"
         )
 
-
         if st.session_state.score_type == "CGPA":
-
             st.text_input(
                 "CGPA",
                 placeholder="Example: 8.2",
                 key="cgpa_input"
             )
-
         else:
-
             st.text_input(
                 "Percentage",
                 placeholder="Example: 82",
                 key="percentage_input"
             )
-
 
         st.text_input(
             "10th Percentage",
@@ -2056,10 +1625,7 @@ with st.form(
             key="tenth_input"
         )
 
-
-    # ========================================================
-    # EDUCATION DETAILS
-    # ========================================================
+    # ---------------- EDUCATION DETAILS ----------------
 
     st.markdown(
         """
@@ -2070,9 +1636,7 @@ with st.form(
         unsafe_allow_html=True
     )
 
-
     col1, col2 = st.columns(2)
-
 
     with col1:
 
@@ -2099,7 +1663,6 @@ with st.form(
             key="stream"
         )
 
-
         st.selectbox(
             "Current Year",
             [
@@ -2112,7 +1675,6 @@ with st.form(
             key="current_year"
         )
 
-
     with col2:
 
         st.text_input(
@@ -2121,17 +1683,13 @@ with st.form(
             key="twelfth_input"
         )
 
-
         st.text_input(
             "Number of Backlogs",
             placeholder="Example: 0",
             key="backlogs_input"
         )
 
-
-    # ========================================================
-    # SKILLS & EXPERIENCE
-    # ========================================================
+    # ---------------- SKILLS & EXPERIENCE ----------------
 
     st.markdown(
         """
@@ -2142,62 +1700,44 @@ with st.form(
         unsafe_allow_html=True
     )
 
-
     st.text_area(
         "Technical Skills",
-        placeholder=(
-            "Example: Python, SQL, Pandas, "
-            "Machine Learning"
-        ),
+        placeholder="Example: Python, SQL, Pandas, Machine Learning",
         height=100,
         key="technical_skills"
     )
 
-
     st.text_area(
         "Programming Languages / Design Tools",
-        placeholder=(
-            "Example: Python, Java, C++ "
-            "or Fashion CAD, Illustrator"
-        ),
+        placeholder="Example: Python, Java, C++ or Fashion CAD, Illustrator",
         height=100,
         key="programming_languages"
     )
 
-
     col1, col2, col3 = st.columns(3)
 
-
     with col1:
-
         st.text_input(
             "Number of Projects",
             placeholder="Example: 3",
             key="projects_input"
         )
 
-
     with col2:
-
         st.text_input(
             "Number of Internships",
             placeholder="Example: 1",
             key="internships_input"
         )
 
-
     with col3:
-
         st.text_input(
             "Number of Certifications",
             placeholder="Example: 4",
             key="certifications_input"
         )
 
-
-    # ========================================================
-    # ASSESSMENT SCORES
-    # ========================================================
+    # ---------------- ASSESSMENT SCORES ----------------
 
     st.markdown(
         """
@@ -2208,37 +1748,25 @@ with st.form(
         unsafe_allow_html=True
     )
 
-
     col1, col2 = st.columns(2)
 
-
     with col1:
-
         st.text_input(
             "Aptitude Score",
             placeholder="Example: 75",
             key="aptitude_input"
         )
 
-
     with col2:
-
         st.text_input(
             "Communication Score",
             placeholder="Example: 80",
             key="communication_input"
         )
 
+    # ---------------- PREDICT BUTTON ----------------
 
-    # ========================================================
-    # PREDICT BUTTON
-    # ========================================================
-
-    st.markdown(
-        "<br>",
-        unsafe_allow_html=True
-    )
-
+    st.markdown("<br>", unsafe_allow_html=True)
 
     predict_button = st.form_submit_button(
         "🚀 Predict My Placement",
@@ -2260,70 +1788,33 @@ if predict_button:
         # ====================================================
 
         if not st.session_state.student_name.strip():
-
-            st.error(
-                "Please enter the student's name."
-            )
-
+            st.error("Please enter the student's name.")
             st.stop()
-
 
         if not st.session_state.email.strip():
-
-            st.error(
-                "Please enter the student's email."
-            )
-
+            st.error("Please enter the student's email.")
             st.stop()
-
 
         # ====================================================
         # NUMERIC INPUTS
         # ====================================================
 
         try:
-
-            tenth_percentage = float(
-                st.session_state.tenth_input
-            )
-
-            twelfth_percentage = float(
-                st.session_state.twelfth_input
-            )
-
-            backlogs = int(
-                st.session_state.backlogs_input
-            )
-
-            projects = int(
-                st.session_state.projects_input
-            )
-
-            internships = int(
-                st.session_state.internships_input
-            )
-
-            certifications = int(
-                st.session_state.certifications_input
-            )
-
-            aptitude_score = float(
-                st.session_state.aptitude_input
-            )
-
-            communication_score = float(
-                st.session_state.communication_input
-            )
+            tenth_percentage = float(st.session_state.tenth_input)
+            twelfth_percentage = float(st.session_state.twelfth_input)
+            backlogs = int(st.session_state.backlogs_input)
+            projects = int(st.session_state.projects_input)
+            internships = int(st.session_state.internships_input)
+            certifications = int(st.session_state.certifications_input)
+            aptitude_score = float(st.session_state.aptitude_input)
+            communication_score = float(st.session_state.communication_input)
 
         except ValueError:
-
             st.error(
                 "Please enter valid numbers in all "
                 "academic, experience and score fields."
             )
-
             st.stop()
-
 
         # ====================================================
         # CGPA / PERCENTAGE
@@ -2332,186 +1823,94 @@ if predict_button:
         if st.session_state.score_type == "CGPA":
 
             try:
-
-                cgpa = float(
-                    st.session_state.cgpa_input
-                )
-
+                cgpa = float(st.session_state.cgpa_input)
             except ValueError:
-
-                st.error(
-                    "Please enter a valid CGPA."
-                )
-
+                st.error("Please enter a valid CGPA.")
                 st.stop()
 
         else:
 
             try:
-
-                percentage = float(
-                    st.session_state.percentage_input
-                )
-
+                percentage = float(st.session_state.percentage_input)
                 cgpa = percentage / 9.5
-
             except ValueError:
-
-                st.error(
-                    "Please enter a valid percentage."
-                )
-
+                st.error("Please enter a valid percentage.")
                 st.stop()
-
 
         # ====================================================
         # RANGE CHECKS
         # ====================================================
 
         if not 0 <= cgpa <= 10:
-
-            st.error(
-                "CGPA must be between 0 and 10."
-            )
-
+            st.error("CGPA must be between 0 and 10.")
             st.stop()
-
 
         if not 0 <= tenth_percentage <= 100:
-
-            st.error(
-                "10th percentage must be between 0 and 100."
-            )
-
+            st.error("10th percentage must be between 0 and 100.")
             st.stop()
-
 
         if not 0 <= twelfth_percentage <= 100:
-
-            st.error(
-                "12th percentage must be between 0 and 100."
-            )
-
+            st.error("12th percentage must be between 0 and 100.")
             st.stop()
-
 
         if backlogs < 0:
-
-            st.error(
-                "Backlogs cannot be negative."
-            )
-
+            st.error("Backlogs cannot be negative.")
             st.stop()
-
 
         if projects < 0:
-
-            st.error(
-                "Projects cannot be negative."
-            )
-
+            st.error("Projects cannot be negative.")
             st.stop()
-
 
         if internships < 0:
-
-            st.error(
-                "Internships cannot be negative."
-            )
-
+            st.error("Internships cannot be negative.")
             st.stop()
-
 
         if certifications < 0:
-
-            st.error(
-                "Certifications cannot be negative."
-            )
-
+            st.error("Certifications cannot be negative.")
             st.stop()
-
 
         if not 0 <= aptitude_score <= 100:
-
-            st.error(
-                "Aptitude score must be between 0 and 100."
-            )
-
+            st.error("Aptitude score must be between 0 and 100.")
             st.stop()
-
 
         if not 0 <= communication_score <= 100:
-
-            st.error(
-                "Communication score must be between 0 and 100."
-            )
-
+            st.error("Communication score must be between 0 and 100.")
             st.stop()
-
 
         # ====================================================
         # MACHINE LEARNING PREDICTION
         # ====================================================
 
-        with st.spinner(
-            "Analyzing your profile using Machine Learning..."
-        ):
+        with st.spinner("Analyzing your profile using Machine Learning..."):
 
             prediction, probability = predict_placement(
-
                 cgpa=cgpa,
-
                 tenth_percentage=tenth_percentage,
-
                 twelfth_percentage=twelfth_percentage,
-
                 backlogs=backlogs,
-
-                technical_skills=
-                    st.session_state.technical_skills,
-
-                programming_languages=
-                    st.session_state.programming_languages,
-
+                technical_skills=st.session_state.technical_skills,
+                programming_languages=st.session_state.programming_languages,
                 projects=projects,
-
                 internships=internships,
-
                 certifications=certifications,
-
                 aptitude_score=aptitude_score,
-
                 communication_score=communication_score,
-
-                stream=
-                    st.session_state.stream,
-
-                year=
-                    st.session_state.current_year
+                stream=st.session_state.stream,
+                year=st.session_state.current_year
             )
-
 
         # ====================================================
         # RESULT
         # ====================================================
 
-        placement_probability = (
-            probability * 100
-        )
-
+        placement_probability = probability * 100
 
         if placement_probability >= 75:
-
             readiness = "Highly Ready"
-
         elif placement_probability >= 50:
-
             readiness = "Moderately Ready"
-
         else:
-
             readiness = "Needs Improvement"
-
 
         # Store the latest assessment for the project dashboard.
         st.session_state.last_result = {
@@ -2523,84 +1922,38 @@ if predict_button:
 
         st.session_state.assessment_count += 1
 
-
         # ====================================================
         # SAVE TO DATABASE
         # ====================================================
 
         student_record = {
-
-            "name":
-                st.session_state.student_name,
-
-            "email":
-                st.session_state.email,
-
-            "education_category":
-                st.session_state.education_category,
-
-            "stream":
-                st.session_state.stream,
-
-            "current_year":
-                st.session_state.current_year,
-
-            "cgpa":
-                cgpa,
-
-            "tenth_percentage":
-                tenth_percentage,
-
-            "twelfth_percentage":
-                twelfth_percentage,
-
-            "backlogs":
-                backlogs,
-
-            "technical_skills":
-                st.session_state.technical_skills,
-
-            "programming_languages":
-                st.session_state.programming_languages,
-
-            "projects":
-                projects,
-
-            "internships":
-                internships,
-
-            "certifications":
-                certifications,
-
-            "aptitude_score":
-                aptitude_score,
-
-            "communication_score":
-                communication_score,
-
-            "preferred_career":
-                st.session_state.preferred_career,
-
-            "preferred_location":
-                st.session_state.preferred_location,
-
-            "placement_probability":
-                placement_probability,
-
-            "readiness_level":
-                readiness
+            "name": st.session_state.student_name,
+            "email": st.session_state.email,
+            "education_category": st.session_state.education_category,
+            "stream": st.session_state.stream,
+            "current_year": st.session_state.current_year,
+            "cgpa": cgpa,
+            "tenth_percentage": tenth_percentage,
+            "twelfth_percentage": twelfth_percentage,
+            "backlogs": backlogs,
+            "technical_skills": st.session_state.technical_skills,
+            "programming_languages": st.session_state.programming_languages,
+            "projects": projects,
+            "internships": internships,
+            "certifications": certifications,
+            "aptitude_score": aptitude_score,
+            "communication_score": communication_score,
+            "preferred_career": st.session_state.preferred_career,
+            "preferred_location": st.session_state.preferred_location,
+            "placement_probability": placement_probability,
+            "readiness_level": readiness
         }
-
 
         try:
 
-            save_student(
-                student_record
-            )
+            save_student(student_record)
 
-            st.success(
-                "✅ Student details saved successfully!"
-            )
+            st.success("✅ Student details saved successfully!")
 
         except Exception as save_error:
 
@@ -2609,10 +1962,7 @@ if predict_button:
                 "but the details could not be saved."
             )
 
-            st.code(
-                str(save_error)
-            )
-
+            st.code(str(save_error))
 
         # ====================================================
         # RESULT TITLE
@@ -2627,56 +1977,35 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         # ====================================================
         # METRICS
         # ====================================================
 
         col1, col2, col3 = st.columns(3)
 
-
         with col1:
-
-            st.metric(
-                "Placement Probability",
-                f"{placement_probability:.1f}%"
-            )
-
+            st.metric("Placement Probability", f"{placement_probability:.1f}%")
 
         with col2:
-
-            st.metric(
-                "Readiness Level",
-                readiness
-            )
-
+            st.metric("Readiness Level", readiness)
 
         with col3:
-
-            st.metric(
-                "Career Field",
-                st.session_state.preferred_career
-            )
-
+            st.metric("Career Field", st.session_state.preferred_career)
 
         # ====================================================
         # PLACEMENT STATUS
         # ====================================================
 
         if prediction == 1:
-
             st.success(
                 "✅ The Machine Learning model predicts "
                 "a positive placement outcome."
             )
-
         else:
-
             st.warning(
                 "⚠️ The Machine Learning model predicts "
                 "that additional preparation is recommended."
             )
-
 
         # ====================================================
         # PROFILE SUMMARY
@@ -2691,70 +2020,25 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         col1, col2 = st.columns(2)
 
-
         with col1:
-
-            st.write(
-                f"**Student:** "
-                f"{st.session_state.student_name}"
-            )
-
-            st.write(
-                f"**Education:** "
-                f"{st.session_state.education_category}"
-            )
-
-            st.write(
-                f"**Stream:** "
-                f"{st.session_state.stream}"
-            )
-
-            st.write(
-                f"**Current Year:** "
-                f"{st.session_state.current_year}"
-            )
-
-            st.write(
-                f"**CGPA:** "
-                f"{cgpa:.2f}"
-            )
-
+            st.write(f"**Student:** {st.session_state.student_name}")
+            st.write(f"**Education:** {st.session_state.education_category}")
+            st.write(f"**Stream:** {st.session_state.stream}")
+            st.write(f"**Current Year:** {st.session_state.current_year}")
+            st.write(f"**CGPA:** {cgpa:.2f}")
 
         with col2:
-
-            st.write(
-                f"**Projects:** "
-                f"{projects}"
-            )
-
-            st.write(
-                f"**Internships:** "
-                f"{internships}"
-            )
-
-            st.write(
-                f"**Certifications:** "
-                f"{certifications}"
-            )
-
-            st.write(
-                f"**Backlogs:** "
-                f"{backlogs}"
-            )
-
-            st.write(
-                f"**Preferred Career:** "
-                f"{st.session_state.preferred_career}"
-            )
-
+            st.write(f"**Projects:** {projects}")
+            st.write(f"**Internships:** {internships}")
+            st.write(f"**Certifications:** {certifications}")
+            st.write(f"**Backlogs:** {backlogs}")
+            st.write(f"**Preferred Career:** {st.session_state.preferred_career}")
             st.write(
                 f"**Preferred Location:** "
                 f"{st.session_state.preferred_location or 'Not specified'}"
             )
-
 
         # ====================================================
         # RECOMMENDED COMPANIES
@@ -2769,107 +2053,41 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         try:
 
-            function = (
-                get_company_recommendations
-            )
-
-            parameters = inspect.signature(
-                function
-            ).parameters
-
+            function = get_company_recommendations
+            parameters = inspect.signature(function).parameters
             kwargs = {}
 
-
             if "preferred_career" in parameters:
-
-                kwargs[
-                    "preferred_career"
-                ] = (
-                    st.session_state.preferred_career
-                )
-
+                kwargs["preferred_career"] = st.session_state.preferred_career
             elif "career" in parameters:
-
-                kwargs[
-                    "career"
-                ] = (
-                    st.session_state.preferred_career
-                )
-
+                kwargs["career"] = st.session_state.preferred_career
             elif "field" in parameters:
-
-                kwargs[
-                    "field"
-                ] = (
-                    st.session_state.preferred_career
-                )
-
+                kwargs["field"] = st.session_state.preferred_career
 
             if "preferred_location" in parameters:
-
-                kwargs[
-                    "preferred_location"
-                ] = (
-                    st.session_state.preferred_location
-                )
-
+                kwargs["preferred_location"] = st.session_state.preferred_location
             elif "location" in parameters:
-
-                kwargs[
-                    "location"
-                ] = (
-                    st.session_state.preferred_location
-                )
-
+                kwargs["location"] = st.session_state.preferred_location
             elif "job_location" in parameters:
+                kwargs["job_location"] = st.session_state.preferred_location
 
-                kwargs[
-                    "job_location"
-                ] = (
-                    st.session_state.preferred_location
-                )
-
-
-            companies = function(
-                **kwargs
-            )
-
+            companies = function(**kwargs)
 
             if companies:
 
                 for company in companies:
 
-                    if isinstance(
-                        company,
-                        dict
-                    ):
-
+                    if isinstance(company, dict):
                         company_name = (
-
-                            company.get(
-                                "company"
-                            )
-
-                            or company.get(
-                                "name"
-                            )
-
-                            or company.get(
-                                "company_name"
-                            )
-
+                            company.get("company")
+                            or company.get("name")
+                            or company.get("company_name")
                             or "Recommended Company"
                         )
-
                     else:
-
-                        company_name = str(
-                            company
-                        )
-
+                        company_name = str(company)
 
                     st.markdown(
                         f"""
@@ -2888,13 +2106,9 @@ if predict_button:
                     "for this career and location."
                 )
 
-
         except Exception:
 
-            st.info(
-                "Company recommendations could not be loaded."
-            )
-
+            st.info("Company recommendations could not be loaded.")
 
         # ====================================================
         # CAREER GUIDANCE
@@ -2909,151 +2123,63 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         try:
 
-            function = (
-                get_career_recommendation
-            )
-
-            parameters = inspect.signature(
-                function
-            ).parameters
-
+            function = get_career_recommendation
+            parameters = inspect.signature(function).parameters
             kwargs = {}
 
-
             if "preferred_career" in parameters:
-
-                kwargs[
-                    "preferred_career"
-                ] = (
-                    st.session_state.preferred_career
-                )
-
+                kwargs["preferred_career"] = st.session_state.preferred_career
             elif "career" in parameters:
-
-                kwargs[
-                    "career"
-                ] = (
-                    st.session_state.preferred_career
-                )
-
+                kwargs["career"] = st.session_state.preferred_career
             elif "field" in parameters:
+                kwargs["field"] = st.session_state.preferred_career
 
-                kwargs[
-                    "field"
-                ] = (
-                    st.session_state.preferred_career
-                )
+            guidance = function(**kwargs)
 
-
-            guidance = function(
-                **kwargs
-            )
-
-
-            if isinstance(
-                guidance,
-                dict
-            ):
+            if isinstance(guidance, dict):
 
                 roles = (
-
-                    guidance.get(
-                        "roles"
-                    )
-
-                    or guidance.get(
-                        "recommended_roles"
-                    )
-
+                    guidance.get("roles")
+                    or guidance.get("recommended_roles")
                     or []
                 )
-
 
                 skills = (
-
-                    guidance.get(
-                        "required_skills"
-                    )
-
-                    or guidance.get(
-                        "skills"
-                    )
-
+                    guidance.get("required_skills")
+                    or guidance.get("skills")
                     or []
                 )
-
 
                 certifications_list = (
-
-                    guidance.get(
-                        "certifications"
-                    )
-
-                    or guidance.get(
-                        "recommended_certifications"
-                    )
-
+                    guidance.get("certifications")
+                    or guidance.get("recommended_certifications")
                     or []
                 )
 
-
                 if roles:
-
-                    st.write(
-                        "#### 💼 Suitable Roles"
-                    )
-
+                    st.write("#### 💼 Suitable Roles")
                     for role in roles:
-
-                        st.write(
-                            f"• {role}"
-                        )
-
+                        st.write(f"• {role}")
 
                 if skills:
-
-                    st.write(
-                        "#### 🛠️ Important Skills"
-                    )
-
+                    st.write("#### 🛠️ Important Skills")
                     for skill in skills:
-
-                        st.write(
-                            f"• {skill}"
-                        )
-
+                        st.write(f"• {skill}")
 
                 if certifications_list:
-
-                    st.write(
-                        "#### 📜 Recommended Certifications"
-                    )
-
-                    for certification in (
-                        certifications_list
-                    ):
-
-                        st.write(
-                            f"• {certification}"
-                        )
-
+                    st.write("#### 📜 Recommended Certifications")
+                    for certification in certifications_list:
+                        st.write(f"• {certification}")
 
             else:
 
-                st.write(
-                    guidance
-                )
-
+                st.write(guidance)
 
         except Exception:
 
-            st.info(
-                "Career guidance could not be loaded."
-            )
-
+            st.info("Career guidance could not be loaded.")
 
         # ====================================================
         # SKILL GAP ANALYSIS
@@ -3068,51 +2194,27 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         skill_result = analyze_skill_gap(
-
-            preferred_career=
-                st.session_state.preferred_career,
-
-            technical_skills=
-                st.session_state.technical_skills,
-
-            programming_languages=
-                st.session_state.programming_languages
+            preferred_career=st.session_state.preferred_career,
+            technical_skills=st.session_state.technical_skills,
+            programming_languages=st.session_state.programming_languages
         )
 
         st.session_state.last_skill_result = skill_result
 
+        skill_coverage = skill_result["skill_coverage"]
 
-        skill_coverage = skill_result[
-            "skill_coverage"
-        ]
+        st.write(f"**Career Skill Coverage: {skill_coverage:.1f}%**")
 
-
-        st.write(
-            f"**Career Skill Coverage: "
-            f"{skill_coverage:.1f}%**"
-        )
-
-
-        st.progress(
-            int(skill_coverage)
-        )
-
+        st.progress(int(skill_coverage))
 
         # ====================================================
         # MATCHED SKILLS
         # ====================================================
 
-        st.write(
-            "#### ✅ Matched Skills"
-        )
+        st.write("#### ✅ Matched Skills")
 
-
-        matched_skills = skill_result[
-            "matched_skills"
-        ]
-
+        matched_skills = skill_result["matched_skills"]
 
         if matched_skills:
 
@@ -3121,9 +2223,7 @@ if predict_button:
                 st.markdown(
                     f"""
                     <div class="skill-card">
-
                         ✅ {skill}
-
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -3131,69 +2231,40 @@ if predict_button:
 
         else:
 
-            st.info(
-                "No required career skills were matched."
-            )
-
+            st.info("No required career skills were matched.")
 
         # ====================================================
         # SKILLS TO DEVELOP
         # ====================================================
 
-        st.write(
-            "#### ⚠️ Skills to Develop"
-        )
+        st.write("#### ⚠️ Skills to Develop")
 
-
-        priority_skills = skill_result.get(
-            "priority_skills",
-            []
-        )
+        priority_skills = skill_result.get("priority_skills", [])
 
         if not priority_skills:
-            missing_skills = skill_result.get(
-                "missing_skills",
-                []
-            )
+            missing_skills = skill_result.get("missing_skills", [])
             priority_skills = [
-                {
-                    "skill": skill,
-                    "priority": "HIGH"
-                }
+                {"skill": skill, "priority": "HIGH"}
                 for skill in missing_skills
             ]
-
 
         if priority_skills:
 
             for item in priority_skills:
 
                 if isinstance(item, dict):
-                    skill = item.get(
-                        "skill",
-                        "Unknown Skill"
-                    )
-                    priority = item.get(
-                        "priority",
-                        "HIGH"
-                    )
+                    skill = item.get("skill", "Unknown Skill")
+                    priority = item.get("priority", "HIGH")
                 else:
                     skill = str(item)
                     priority = "HIGH"
 
-
                 if priority == "HIGH":
-
                     icon = "🔴"
-
                 elif priority == "MEDIUM":
-
                     icon = "🟠"
-
                 else:
-
                     icon = "🟢"
-
 
                 st.markdown(
                     f"{icon} **{skill}**\n\nPriority: **{priority}**"
@@ -3201,12 +2272,7 @@ if predict_button:
 
         else:
 
-            st.success(
-                "🎉 No major skill gaps were detected."
-            )
-
-
-
+            st.success("🎉 No major skill gaps were detected.")
 
         # ====================================================
         # SKILL IMPROVEMENT VIDEOS
@@ -3220,7 +2286,6 @@ if predict_button:
             """,
             unsafe_allow_html=True
         )
-
 
         # Curated educational videos.
         # The fallback opens a YouTube search for the exact weak skill.
@@ -3252,20 +2317,15 @@ if predict_button:
             }
         }
 
-
         def find_video_for_skill(skill_name):
 
-            skill_text = str(
-                skill_name
-            ).lower().strip()
+            skill_text = str(skill_name).lower().strip()
 
             for keyword, resource in VIDEO_RESOURCES.items():
-
                 if keyword in skill_text:
                     return resource
 
             return None
-
 
         shown_video_skills = set()
 
@@ -3274,10 +2334,7 @@ if predict_button:
             for item in priority_skills:
 
                 if isinstance(item, dict):
-                    weak_skill = item.get(
-                        "skill",
-                        ""
-                    )
+                    weak_skill = item.get("skill", "")
                 else:
                     weak_skill = str(item)
 
@@ -3289,35 +2346,23 @@ if predict_button:
                 if normalized_skill in shown_video_skills:
                     continue
 
-                shown_video_skills.add(
-                    normalized_skill
-                )
+                shown_video_skills.add(normalized_skill)
 
-                resource = find_video_for_skill(
-                    weak_skill
-                )
+                resource = find_video_for_skill(weak_skill)
 
-                st.markdown(
-                    f"#### 📚 Improve: {weak_skill}"
-                )
+                st.markdown(f"#### 📚 Improve: {weak_skill}")
 
                 if resource:
 
-                    st.write(
-                        resource["title"]
-                    )
+                    st.write(resource["title"])
 
-                    st.video(
-                        resource["url"]
-                    )
+                    st.video(resource["url"])
 
                 else:
 
                     search_url = (
                         "https://www.youtube.com/results?search_query="
-                        + quote_plus(
-                            f"{weak_skill} tutorial for beginners"
-                        )
+                        + quote_plus(f"{weak_skill} tutorial for beginners")
                     )
 
                     st.info(
@@ -3327,7 +2372,7 @@ if predict_button:
                     )
 
                     st.link_button(
-                        "🔎 Find learning videos",
+                        f"🔎 Search YouTube: {weak_skill}",
                         search_url,
                         use_container_width=True
                     )
@@ -3338,7 +2383,6 @@ if predict_button:
                 "🎉 No weak skills were detected, so no skill "
                 "improvement videos are required."
             )
-
 
         # ====================================================
         # PREPARATION FOCUS
@@ -3353,52 +2397,39 @@ if predict_button:
             unsafe_allow_html=True
         )
 
-
         if skill_coverage < 40:
 
             message = (
-
                 "Your first priority should be building "
                 "the fundamental skills required for "
-
                 f"{st.session_state.preferred_career}."
             )
-
 
         elif skill_coverage < 70:
 
             message = (
-
                 "You have a basic foundation. Focus on "
                 "the missing skills and build practical "
                 "projects."
             )
 
-
         elif skill_coverage < 90:
 
             message = (
-
                 "Your skill coverage is strong. Focus on "
                 "advanced skills, projects, internships "
                 "and interviews."
             )
 
-
         else:
 
             message = (
-
                 "Your skill coverage is excellent. Focus "
                 "on interview preparation and real-world "
                 "experience."
             )
 
-
-        st.info(
-            message
-        )
-
+        st.info(message)
 
     except Exception as error:
 
@@ -3407,25 +2438,4 @@ if predict_button:
             "the prediction."
         )
 
-        st.code(
-            str(error)
-        )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        st.code(str(error))
